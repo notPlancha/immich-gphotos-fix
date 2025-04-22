@@ -22,8 +22,11 @@ Settings.defaultZone = 'UTC'
 init({ baseUrl: 'http://192.168.1.200:2283/api', apiKey: '21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M' })
 
 const album2014 = '6e966c34-9590-48fd-8592-0fc2c885d2c7'
-const TARGET_ALBUM = album2014
 const gphotosFolder = '/tmp/imm/Photos from 2014'
+
+const TARGET_ALBUM_ID: string = album2014
+const DEBUG_LOG: boolean = false
+const MAX_STACKS_TO_CREATE: number = 0 // 0 is equiv to dry-run
 
 // sanity checks
 const expectBucketToStartWith = '2015' // 2015-06-01T00:00:00.000Z
@@ -34,9 +37,14 @@ const expectBucketToStartWith = '2015' // 2015-06-01T00:00:00.000Z
 // http://192.168.1.200:2283/api/timeline/buckets?albumId=6e966c34-9590-48fd-8592-0fc2c885d2c7&order=desc&size=MONTH
 // http://192.168.1.200:2283/api/timeline/bucket?albumId=6e966c34-9590-48fd-8592-0fc2c885d2c7&order=desc&size=MONTH&timeBucket=2025-03-01T00%3A00%3A00.000Z
 
+const log = console.log.bind(console)
+const debug = (...args: unknown[]) => {
+	if (DEBUG_LOG) log(...args)
+}
+
 async function main() {
-	// await fixBadBuckets(TARGET_ALBUM)
-	await createEditedStacks(TARGET_ALBUM)
+	// await fixBadBuckets(TARGET_ALBUM_ID)
+	await createEditedStacks(TARGET_ALBUM_ID)
 }
 
 async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
@@ -46,7 +54,7 @@ async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 		size: TimeBucketSize.Month,
 		withStacked,
 	})
-	console.log('got', buckets.length, 'buckets')
+	log('got', buckets.length, 'buckets')
 
 	// these reqs will fire simultaneously
 	const assets = (
@@ -59,8 +67,8 @@ async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 					timeBucket: curr.timeBucket,
 					withStacked,
 				})
-				console.log('got', bucket.length, 'items in bucket named', curr.timeBucket)
-				console.log('expected', curr.count, 'items')
+				debug('got', bucket.length, 'items in bucket named', curr.timeBucket)
+				debug('expected', curr.count, 'items')
 				if (bucket.length !== curr.count) throw new Error('unexpected number of items in bucket')
 				return bucket
 			}),
@@ -73,20 +81,20 @@ async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 async function createEditedStacks(albumId: string) {
 	const assets = await getAllAssetsInAlbum(albumId, true)
 
-	// const idMap = new Map(assets.map((asset) => [asset.id, asset]));
 	const nameMap = new Map(assets.map((asset) => [asset.originalFileName, asset]))
 
+	// keep some stats
 	let found = 0
 	let notFound = 0
 	let alreadyStacked = 0
 	let created = 0
 	for (const asset of assets) {
 		if (asset.originalFileName.includes('-edited')) {
-			// console.log("\nfound:", asset.originalFileName);
+			debug('\nfound:', asset.originalFileName)
 			found++
 
 			if (asset.stack) {
-				console.log('already in stack')
+				debug('already in stack')
 				alreadyStacked++
 				continue
 			}
@@ -94,23 +102,23 @@ async function createEditedStacks(albumId: string) {
 			const uneditedName = asset.originalFileName.replace('-edited', '')
 			const uneditedAsset = nameMap.get(uneditedName)
 			if (!uneditedAsset) {
-				console.error('couldnt find unedited asset. Maybe it got trashed')
+				console.error('couldnt find unedited asset', uneditedName, '. Maybe it got trashed')
 				notFound++
 				continue
 			}
 			// if (!uneditedAsset) throw new Error("couldnt find unedited asset. Maybe it got trashed");
-			// console.log("unedited:", uneditedAsset.originalFileName);
+			debug('unedited:', uneditedAsset.originalFileName)
 
-			if (created < 1) {
+			if (created < MAX_STACKS_TO_CREATE) {
 				const s = await createStack({ stackCreateDto: { assetIds: [asset.id, uneditedAsset.id] } })
 				created++
-				console.log('created stack with primaryAssetId:', s.primaryAssetId)
+				log('created stack with primaryAssetId:', s.primaryAssetId)
 			}
 		}
 	}
-	console.log('found', found, 'edited assets')
-	console.log(alreadyStacked, 'already in a stack')
-	console.log(notFound, 'without an unedited version')
+	log('found', found, 'edited assets')
+	log(alreadyStacked, 'already in a stack')
+	log(notFound, 'without an unedited version')
 }
 
 async function fixBadBuckets(albumId: string) {
