@@ -8,13 +8,21 @@ import {
 	updateAsset,
 } from "@immich/sdk";
 import { exit } from "node:process";
-import { DateTime } from "luxon";
+import { DateTime, Settings } from "luxon"; // immich uses luxon internally, so we should also use it
+// import type { TSSettings } from "luxon";
+declare module "luxon" {
+	interface TSSettings {
+		throwOnInvalid: true;
+	}
+}
+Settings.throwOnInvalid = true;
+Settings.defaultZone = "utc";
 
 const apiKey = "21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M";
 init({ baseUrl: "http://192.168.1.200:2283/api", apiKey });
 
 const album2014 = "6e966c34-9590-48fd-8592-0fc2c885d2c7";
-const gphotosFolder = "/tmp/imm/Photos from 2014/";
+const gphotosFolder = "/tmp/imm/Photos from 2014";
 
 // https://immich.app/docs/api/search-assets
 // https://immich.app/docs/api/get-album-info
@@ -47,22 +55,23 @@ async function main() {
 		timeBucket: first.timeBucket,
 		withStacked: false, // if false, "stack" prop is always null. if true, returns fewer items, one per stack.
 	});
-	console.log("got", bucket.length, "items in bucket", first.timeBucket);
-	await Bun.write("bucket.json", JSON.stringify(bucket, null, 2));
-	console.log("wrote bucket.json");
+	console.log("got", bucket.length, "items in bucket named", first.timeBucket);
+	// await Bun.write("bucket.json", JSON.stringify(bucket, null, 2));
+	// console.log("wrote bucket.json");
 
-	bucket.some(async (asset) => {
+	let i = 0;
+	for (const asset of bucket) {
 		console.log("checking", asset.originalFileName);
 		const unixTimestamp = await getTimeFromSidecar(asset.originalFileName);
 		console.log("unix timestamp from sidecar:", unixTimestamp);
 		await addTimeToAsset(unixTimestamp, asset.id);
-		exit(20);
-	});
+		console.log("");
+		i++;
+		// if (i === 300) exit(i);
+	}
 }
 
-function createEditedStack() {
-	// "originalFileName": "IMG-20140811-WA0035-edited.jpg", // extension seems normalized to always be .jpg, not .jpeg
-}
+function createEditedStack() {}
 
 interface SupplementalMetadata {
 	title: string;
@@ -104,21 +113,47 @@ interface SupplementalMetadata {
 	};
 }
 async function findSidecar(filename: string) {
-	const uneditedFilename = filename.replace("-edited.jp", ".jp");
+	const possibleExts = [".jpg", ".jpeg", ".mp4", ".png", ".gif"];
+	const fileExt = possibleExts.find((ext) => filename.endsWith(ext));
+	if (!fileExt) throw new Error(`unknown extension in filename ${filename}`);
+	const fnNoExt = filename.slice(0, fileExt.length * -1);
 
-	// IMG-20141201-WA0001.jpg.supplemental-metadata.json
 	// IMG-20141013-WA0001-edited.jpeg // might have .jpeg extension
-	const sidecar = `${gphotosFolder}${uneditedFilename}.supplemental-metadata.json`;
-	const f = Bun.file(sidecar);
-	const exists = await f.exists();
-	console.log(sidecar, exists ? "exists" : "doesnt exist");
-	if (exists) return f;
+	// IMG-20141201-WA0002.jpg.supplemental-metadata.json
+	// 04d0fd9dc8abd6fac3014db0cd05d0ba.jpg.supplemen.json // max 51 chars filename
+	// Screenshot_2014-12-18-10-50-54.png.supplementa.json
+
+	// hangout_snapshot_0(1).png
+	// hangout_snapshot_0-edited(1).png
+	// hangout_snapshot_0.png.supplemental-metadata(1).json
+
+	const dupeRegex = /(.*)(\(\d{1,2}\))$/; // could extend this regex to include exts and -edited
+	const matches = fnNoExt.match(dupeRegex);
+	let fnNoDupe = fnNoExt;
+	let dupeStr = "";
+	if (matches) {
+		if (matches.length !== 3 || !matches[1] || !matches[2])
+			throw new Error(`unexpected dupe match for: ${filename}`);
+		fnNoDupe = matches[1]; // "hangout_snapshot_0-edited"
+		dupeStr = matches[2]; // "(12)"
+	}
+
+	const uneditedFilename = fnNoDupe.replace(/-edited$/, "");
+
+	const suffix = "supplemental-metadata";
+	let exists = false;
+	for (let i = suffix.length; i >= 1; i--) {
+		const trimmedSuffix = suffix.slice(0, i);
+		const sidecar = `${gphotosFolder}/${uneditedFilename}${fileExt}.${trimmedSuffix}${dupeStr}.json`;
+		const f = Bun.file(sidecar);
+		exists = await f.exists();
+		console.log(sidecar, exists ? "exists" : "doesnt exist");
+		if (exists) return f;
+	}
 
 	throw new Error(`sidecar not found for ${filename}`);
 }
 async function getTimeFromSidecar(filename: string) {
-	if (!filename.endsWith(".jpg") && !filename.endsWith(".jpeg"))
-		throw new Error(`unexpected filename ${filename}`);
 	const f = await findSidecar(filename);
 	const sidecar = (await f.json()) as SupplementalMetadata;
 	// console.dir(sidecar, { depth: 5 });
@@ -131,20 +166,22 @@ async function addTimeToAsset(unixTime: string, assetId: string) {
 	const unixTimeAsNum = Number.parseInt(unixTime, 10);
 	if (Number.isNaN(unixTimeAsNum)) throw new Error(`${unixTime} is NaN`);
 
-	const d = new Date(unixTimeAsNum * 1000);
+	const dt = DateTime.fromSeconds(unixTimeAsNum, { zone: "UTC" });
+	const isoString = dt.toISO({
+		// suppressMilliseconds: true,
+	});
 
-	const isoString = d.toISOString(); // could throw `RangeError: Invalid time value`
-	if (!isoString.startsWith("2014") || !isoString.endsWith("Z"))
+	if (!dt.isValid || !isoString.startsWith("2014") || !isoString.endsWith("Z"))
 		throw new Error(`timestamp conversion failed with ${assetId}: ${unixTime}`);
 
-	console.log("ISO timestamp: ", isoString);
-	const dateTimeOriginal = `${isoString.slice(0, -1)}+00:00`;
-	console.log("converted to dto", dateTimeOriginal);
+	console.log("as ISO:", isoString);
+	// const dateTimeOriginal = `${isoString.slice(0, -1)}+00:00`;
+	// console.log("converted to dto", dateTimeOriginal);
 	console.log("assigning to asset:", assetId);
 
 	const r = await updateAsset({
 		id: assetId,
-		updateAssetDto: { dateTimeOriginal },
+		updateAssetDto: { dateTimeOriginal: isoString },
 	});
 	// fileCreatedAt and localDateTime and exifInfo.dateTimeOriginal will be changed
 	// "fileCreatedAt": "2014-10-06T16:00:00.000Z",
@@ -153,9 +190,19 @@ async function addTimeToAsset(unixTime: string, assetId: string) {
 
 	// exifInfo.dateTimeOriginal changes immediately, the others do not
 
-	console.log(r);
-	console.log(r.exifInfo?.dateTimeOriginal);
-	console.log(r.exifInfo?.dateTimeOriginal === dateTimeOriginal);
+	// console.log(r);
+	if (!r.exifInfo || !r.exifInfo.dateTimeOriginal)
+		throw new Error("no exifInfo on asset");
+	console.log("exifInfo.dateTimeOriginal:", r.exifInfo.dateTimeOriginal);
+	const rdt = DateTime.fromISO(r.exifInfo.dateTimeOriginal);
+	console.log("as luxon obj:", rdt);
+
+	// console.log(+dt, "===", +rdt);
+	const setTimeSuccessful = +dt === +rdt;
+	if (!setTimeSuccessful)
+		throw new Error(
+			"time on returned asset was different than what we set it to",
+		);
 }
 
 await main();
