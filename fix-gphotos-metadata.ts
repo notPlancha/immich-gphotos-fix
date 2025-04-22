@@ -6,23 +6,27 @@ import {
 	TimeBucketSize,
 	getTimeBucket,
 	updateAsset,
+	type TimeBucketResponseDto,
+	createStack,
 } from "@immich/sdk";
 import { exit } from "node:process";
-import { DateTime, Settings } from "luxon"; // immich uses luxon internally, so we should also use it
-// import type { TSSettings } from "luxon";
+import { DateTime, Settings, type TSSettings } from "luxon"; // immich uses luxon internally, so we should also use it
 declare module "luxon" {
 	interface TSSettings {
 		throwOnInvalid: true;
 	}
 }
 Settings.throwOnInvalid = true;
-Settings.defaultZone = "utc";
+Settings.defaultZone = "UTC";
 
-const apiKey = "21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M";
-init({ baseUrl: "http://192.168.1.200:2283/api", apiKey });
+init({ baseUrl: "http://192.168.1.200:2283/api", apiKey: "21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M" });
 
 const album2014 = "6e966c34-9590-48fd-8592-0fc2c885d2c7";
+const TARGET_ALBUM = album2014;
 const gphotosFolder = "/tmp/imm/Photos from 2014";
+
+// sanity checks
+const expectBucketToStartWith = "2015"; // 2015-06-01T00:00:00.000Z
 
 // https://immich.app/docs/api/search-assets
 // https://immich.app/docs/api/get-album-info
@@ -31,8 +35,87 @@ const gphotosFolder = "/tmp/imm/Photos from 2014";
 // http://192.168.1.200:2283/api/timeline/bucket?albumId=6e966c34-9590-48fd-8592-0fc2c885d2c7&order=desc&size=MONTH&timeBucket=2025-03-01T00%3A00%3A00.000Z
 
 async function main() {
+	// await fixBadBuckets(TARGET_ALBUM)
+	await createEditedStacks(TARGET_ALBUM);
+}
+
+async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 	const buckets = await getTimeBuckets({
-		albumId: album2014,
+		albumId,
+		order: AssetOrder.Desc,
+		size: TimeBucketSize.Month,
+		withStacked,
+	});
+	console.log("got", buckets.length, "buckets");
+
+	// these reqs will fire simultaneously
+	const assets = (
+		await Promise.all(
+			buckets.map(async (curr) => {
+				const bucket = await getTimeBucket({
+					albumId,
+					size: TimeBucketSize.Month,
+					order: AssetOrder.Desc,
+					timeBucket: curr.timeBucket,
+					withStacked,
+				});
+				console.log("got", bucket.length, "items in bucket named", curr.timeBucket);
+				console.log("expected", curr.count, "items");
+				if (bucket.length !== curr.count) throw new Error("unexpected number of items in bucket");
+				return bucket;
+			}),
+		)
+	).flat();
+
+	return assets;
+}
+
+async function createEditedStacks(albumId: string) {
+	const assets = await getAllAssetsInAlbum(albumId, true);
+
+	// const idMap = new Map(assets.map((asset) => [asset.id, asset]));
+	const nameMap = new Map(assets.map((asset) => [asset.originalFileName, asset]));
+
+	let found = 0;
+	let notFound = 0;
+	let alreadyStacked = 0;
+	let created = 0;
+	for (const asset of assets) {
+		if (asset.originalFileName.includes("-edited")) {
+			// console.log("\nfound:", asset.originalFileName);
+			found++;
+
+			if (asset.stack) {
+				console.log("already in stack");
+				alreadyStacked++;
+				continue;
+			}
+
+			const uneditedName = asset.originalFileName.replace("-edited", "");
+			const uneditedAsset = nameMap.get(uneditedName);
+			if (!uneditedAsset) {
+				console.error("couldnt find unedited asset. Maybe it got trashed");
+				notFound++;
+				continue;
+			}
+			// if (!uneditedAsset) throw new Error("couldnt find unedited asset. Maybe it got trashed");
+			// console.log("unedited:", uneditedAsset.originalFileName);
+
+			if (created < 1) {
+				const s = await createStack({ stackCreateDto: { assetIds: [asset.id, uneditedAsset.id] } });
+				created++;
+				console.log("created stack with primaryAssetId:", s.primaryAssetId);
+			}
+		}
+	}
+	console.log("found", found, "edited assets");
+	console.log(alreadyStacked, "already in a stack");
+	console.log(notFound, "without an unedited version");
+}
+
+async function fixBadBuckets(albumId: string) {
+	const buckets = await getTimeBuckets({
+		albumId,
 		order: AssetOrder.Desc,
 		size: TimeBucketSize.Month,
 		// withStacked: true, // decreases "count"
@@ -44,12 +127,11 @@ async function main() {
 
 	const first = buckets[0];
 	if (!first) throw new Error("no buckets");
-	if (!first.timeBucket.startsWith("2025"))
-		throw new Error("bad bucket missing");
+	if (!first.timeBucket.startsWith(expectBucketToStartWith)) throw new Error("bad bucket missing");
 	// first.timeBucket = '2014-12-01T00:00:00.000Z'
 
 	const bucket = await getTimeBucket({
-		albumId: album2014,
+		albumId,
 		size: TimeBucketSize.Month,
 		order: AssetOrder.Desc,
 		timeBucket: first.timeBucket,
@@ -67,11 +149,9 @@ async function main() {
 		await addTimeToAsset(unixTimestamp, asset.id);
 		console.log("");
 		i++;
-		// if (i === 300) exit(i);
+		// if (i === 1) exit(i);
 	}
 }
-
-function createEditedStack() {}
 
 interface SupplementalMetadata {
 	title: string;
@@ -113,7 +193,7 @@ interface SupplementalMetadata {
 	};
 }
 async function findSidecar(filename: string) {
-	const possibleExts = [".jpg", ".jpeg", ".mp4", ".png", ".gif"];
+	const possibleExts = [".jpg", ".jpeg", ".mp4", ".png", ".gif", ".m4v"];
 	const fileExt = possibleExts.find((ext) => filename.endsWith(ext));
 	if (!fileExt) throw new Error(`unknown extension in filename ${filename}`);
 	const fnNoExt = filename.slice(0, fileExt.length * -1);
@@ -132,8 +212,7 @@ async function findSidecar(filename: string) {
 	let fnNoDupe = fnNoExt;
 	let dupeStr = "";
 	if (matches) {
-		if (matches.length !== 3 || !matches[1] || !matches[2])
-			throw new Error(`unexpected dupe match for: ${filename}`);
+		if (matches.length !== 3 || !matches[1] || !matches[2]) throw new Error(`unexpected dupe match for: ${filename}`);
 		fnNoDupe = matches[1]; // "hangout_snapshot_0-edited"
 		dupeStr = matches[2]; // "(12)"
 	}
@@ -191,18 +270,14 @@ async function addTimeToAsset(unixTime: string, assetId: string) {
 	// exifInfo.dateTimeOriginal changes immediately, the others do not
 
 	// console.log(r);
-	if (!r.exifInfo || !r.exifInfo.dateTimeOriginal)
-		throw new Error("no exifInfo on asset");
+	if (!r.exifInfo || !r.exifInfo.dateTimeOriginal) throw new Error("no exifInfo on asset");
 	console.log("exifInfo.dateTimeOriginal:", r.exifInfo.dateTimeOriginal);
 	const rdt = DateTime.fromISO(r.exifInfo.dateTimeOriginal);
 	console.log("as luxon obj:", rdt);
 
 	// console.log(+dt, "===", +rdt);
 	const setTimeSuccessful = +dt === +rdt;
-	if (!setTimeSuccessful)
-		throw new Error(
-			"time on returned asset was different than what we set it to",
-		);
+	if (!setTimeSuccessful) throw new Error("time on returned asset was different than what we set it to");
 }
 
 await main();
