@@ -2,12 +2,14 @@
   "name": "api-scripts",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/luxon": "^3.6.2"
   },
   "peerDependencies": {
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@immich/sdk": "^1.131.3"
+    "@immich/sdk": "^1.131.3",
+    "luxon": "^3.6.1"
   }
 }
