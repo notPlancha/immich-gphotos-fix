@@ -1,6 +1,9 @@
 {
   "name": "api-scripts",
   "private": true,
+  "scripts": {
+    "test": "bun test"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/luxon": "^3.6.2"

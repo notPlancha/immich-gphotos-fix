@@ -8,7 +8,7 @@ immich-go also does not handle `-edited` google photos correctly. When Google Ph
 
 So, instead of using immich-go, we do a different two-step process to avoid mistakes and missing uploads.
 
-1) Upload photos with the [immich cli](https://immich.app/docs/features/command-line-interface/), grouping them into an album via `--album-name`.
+1) Upload photos with the [immich cli](https://immich.app/docs/features/command-line-interface/), grouping them into an album via `--album-name` / `-A`.
 2) Identify the photos that have missing/bad metadata, and using the [immich API](https://immich.app/docs/api/), repair them using the Google Photos `supplemental-metadata.json` sidecar.
 
 The photo assets that are missing embedded metadata can be easily identified because they all have the date that the Google Takeout was created.  
@@ -16,15 +16,27 @@ The photos that have wrong metadata are also grouped en masse on seemingly-rando
 
 These photos/videos that need repair can be grabbed via the [immich bucket API](https://immich.app/docs/api/get-time-buckets), which can select by album ID, and are grouped by month or day. Then the `supplemental-metadata.json` date can be added to every asset in the bucket.
 
-## install
+## Usage
 
-To install dependencies:
+Upload photos:
+
+```bash
+immich upload -r -A 'Photos from 2015' ./'Photos from 2015'
+```
+
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-To run:
+Fix metadata from sidecar:
+
+```bash
+bun run 
+```
+
+Stack photos:
 
 ```bash
 bun run 
@@ -35,3 +47,7 @@ bun run
 Variables in `ALL_CAPS` are meant to be configured by the user.
 
 Mostly no concurrency. Not needed, plenty fast without it, makes catching errors easier.
+
+## TODO
+
+`unstackSolo()`
