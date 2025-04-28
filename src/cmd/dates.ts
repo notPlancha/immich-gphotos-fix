@@ -4,6 +4,7 @@ import type { SupplementalMetadata } from '../lib/types.ts'
 import { getSidecarFilenames } from '../lib/filenames.ts'
 import { DateTime } from 'luxon' // immich uses luxon internally, so we should also use it
 import { join } from 'node:path'
+import { exit } from 'node:process'
 
 type FixDatesParams = {
 	albumId: string
@@ -33,17 +34,23 @@ async function getTimeFromSidecar(filename: string, SIDECAR_FOLDER: string) {
 	return unixTimestamp
 }
 
-async function addTimeToAsset(unixTime: string, assetId: string, EXPECTED_YEAR: string) {
+function unixTimeToLuxon(unixTime: string, EXPECTED_YEAR: string) {
 	const unixTimeAsNum = Number.parseInt(unixTime, 10)
 	if (Number.isNaN(unixTimeAsNum)) throw new Error(`${unixTime} is NaN`)
 
 	const dt = DateTime.fromSeconds(unixTimeAsNum, { zone: 'UTC' })
+
+	const isoString = dt.toISO()
+	if (!dt.isValid || !isoString.startsWith(EXPECTED_YEAR) || !isoString.endsWith('Z'))
+		throw new Error(`timestamp conversion failed with ${unixTime}: ${dt}`)
+
+	return dt
+}
+
+async function addTimeToAsset(dt: DateTime, assetId: string, EXPECTED_YEAR: string) {
 	const isoString = dt.toISO({
 		// suppressMilliseconds: true,
 	})
-
-	if (!dt.isValid || !isoString.startsWith(EXPECTED_YEAR) || !isoString.endsWith('Z'))
-		throw new Error(`timestamp conversion failed with ${assetId}: ${unixTime}`)
 
 	log('as ISO:', isoString)
 	log('assigning to asset:', assetId)
@@ -73,7 +80,7 @@ async function addTimeToAsset(unixTime: string, assetId: string, EXPECTED_YEAR: 
 export async function fixBadBuckets(params: FixDatesParams) {
 	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, SIDECAR_FOLDER, EXPECTED_YEAR } = params
 
-  const bucketSize = /^\d{4}-\d{2}-\d{2}/.test(TARGET_BUCKET) ? TimeBucketSize.Day : TimeBucketSize.Month
+	const bucketSize = /^\d{4}-\d{2}-\d{2}/.test(TARGET_BUCKET) ? TimeBucketSize.Day : TimeBucketSize.Month
 	const buckets = await getTimeBuckets({
 		albumId,
 		order: AssetOrder.Desc,
@@ -102,10 +109,23 @@ export async function fixBadBuckets(params: FixDatesParams) {
 		const asset = bucket[i]
 		if (!asset) throw new Error(`no asset at index ${i}`)
 
-		log('checking', asset.originalFileName)
+		log('checking', asset.originalFileName, 'id', asset.id)
+
 		const unixTimestamp = await getTimeFromSidecar(asset.originalFileName, SIDECAR_FOLDER)
 		log('unix timestamp from sidecar:', unixTimestamp)
-		await addTimeToAsset(unixTimestamp, asset.id, EXPECTED_YEAR)
+
+		if (!asset.exifInfo?.dateTimeOriginal) throw new Error('expected asset to have exifInfo')
+		const originalDT = DateTime.fromISO(asset.exifInfo?.dateTimeOriginal)
+		const sidecarDT = unixTimeToLuxon(unixTimestamp, EXPECTED_YEAR)
+		const diff = originalDT.diff(sidecarDT, 'minutes').toObject()
+		debug('time diff', diff)
+		if (typeof diff.minutes !== 'number') throw new Error('luxon diff failed')
+		if (Math.abs(diff.minutes) <= 3) {
+			log('sidecar timestamp is within 3m of the current one. Not changing.')
+		} else {
+			log('changing', originalDT.toISO(), 'to', sidecarDT.toISO())
+			await addTimeToAsset(sidecarDT, asset.id, EXPECTED_YEAR)
+		}
 		log('')
 	}
 }

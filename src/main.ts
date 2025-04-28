@@ -66,7 +66,7 @@ const { values: argValues } = parseArgs({
 setDebug(argValues.debug)
 
 if (!argValues['album-id']) throw new Error('provide an album ID')
-assert.match(argValues['album-id'], /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/, 'album-id must be a UUID')
+assert.match(argValues['album-id'], /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/, 'album-id must be a UUID')
 
 if (
 	(argValues.stacks && argValues['fix-dates-in-time-bucket']) ||
