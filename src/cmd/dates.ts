@@ -1,8 +1,9 @@
-import { getTimeBuckets, AssetOrder, TimeBucketSize, getTimeBucket, updateAsset, createStack } from '@immich/sdk'
+import { getTimeBuckets, AssetOrder, TimeBucketSize, getTimeBucket, updateAsset } from '@immich/sdk'
 import { log, debug, dir } from '../lib/log.ts'
 import type { SupplementalMetadata } from '../lib/types.ts'
 import { getSidecarFilenames } from '../lib/filenames.ts'
 import { DateTime } from 'luxon' // immich uses luxon internally, so we should also use it
+import { join } from 'node:path'
 
 type FixDatesParams = {
 	albumId: string
@@ -13,7 +14,7 @@ type FixDatesParams = {
 }
 
 async function findSidecar(filename: string, SIDECAR_FOLDER: string) {
-	const candidates = getSidecarFilenames(filename).map((path) => `${SIDECAR_FOLDER}/${path}`)
+	const candidates = getSidecarFilenames(filename).map((path) => join(SIDECAR_FOLDER, path))
 	for (const candidate of candidates) {
 		const f = Bun.file(candidate)
 		const exists = await f.exists()
@@ -72,10 +73,11 @@ async function addTimeToAsset(unixTime: string, assetId: string, EXPECTED_YEAR: 
 export async function fixBadBuckets(params: FixDatesParams) {
 	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, SIDECAR_FOLDER, EXPECTED_YEAR } = params
 
+  const bucketSize = /^\d{4}-\d{2}-\d{2}/.test(TARGET_BUCKET) ? TimeBucketSize.Day : TimeBucketSize.Month
 	const buckets = await getTimeBuckets({
 		albumId,
 		order: AssetOrder.Desc,
-		size: TimeBucketSize.Month,
+		size: bucketSize,
 	})
 	debug(buckets)
 	log('got', buckets.length, 'buckets')
@@ -87,7 +89,7 @@ export async function fixBadBuckets(params: FixDatesParams) {
 
 	const bucket = await getTimeBucket({
 		albumId,
-		size: TimeBucketSize.Month,
+		size: bucketSize,
 		order: AssetOrder.Desc,
 		timeBucket: target.timeBucket,
 	})

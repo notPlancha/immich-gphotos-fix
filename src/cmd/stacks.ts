@@ -42,7 +42,18 @@ export async function createEditedStacks(params: CreateStacksParams) {
 
 	const assets = await getAllAssetsInAlbum(albumId, true)
 
-	const nameMap = new Map(assets.map((asset) => [asset.originalFileName, asset]))
+	const nameMap = new Map()
+	const dupes = []
+	for (const asset of assets) {
+		const { originalFileName } = asset
+		if (nameMap.has(originalFileName)) dupes.push(originalFileName)
+		else nameMap.set(originalFileName, asset)
+	}
+	for (const dupe of dupes) nameMap.delete(dupe) // dont make wrong stack by accident
+	if (dupes.length) {
+		console.error(`dupes in assets originalFileNames: ${dupes}`)
+	}
+
 	// keep some stats
 	let found = 0
 	let notFound = 0
@@ -62,11 +73,11 @@ export async function createEditedStacks(params: CreateStacksParams) {
 			const uneditedName = asset.originalFileName.replace('-edited', '')
 			const uneditedAsset = nameMap.get(uneditedName)
 			if (!uneditedAsset) {
-				console.error('couldnt find unedited asset', uneditedName, '. Maybe it got trashed')
+				if (dupes.includes(uneditedName)) console.error(uneditedName, 'was found twice, skipping')
+				else console.error('couldnt find unedited asset', uneditedName, '. Maybe it got trashed')
 				notFound++
 				continue
 			}
-			// if (!uneditedAsset) throw new Error("couldnt find unedited asset. Maybe it got trashed");
 			debug('unedited:', uneditedAsset.originalFileName)
 
 			if (created < MAX_WRITE_OPS) {

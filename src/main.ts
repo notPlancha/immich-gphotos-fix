@@ -5,7 +5,8 @@ import { readdir } from 'node:fs/promises'
 import { createEditedStacks } from './cmd/stacks.ts'
 import { fixBadBuckets } from './cmd/dates.ts'
 import { Settings /*, type TSSettings */ } from 'luxon' // immich uses luxon internally, so we should also use it
-import { setDebug } from './lib/log.ts'
+import { debug, setDebug } from './lib/log.ts'
+import { exit } from 'node:process'
 declare module 'luxon' {
 	interface TSSettings {
 		throwOnInvalid: true
@@ -27,10 +28,16 @@ const { values: argValues } = parseArgs({
 		debug: {
 			type: 'boolean',
 			default: false,
+			short: 'v',
 		},
 		'dry-run': {
 			type: 'boolean',
-      short: 'n',
+			short: 'n',
+		},
+		'max-write-ops': {
+			type: 'string',
+			default: Number.MAX_SAFE_INTEGER.toString(),
+      short: 'm',
 		},
 
 		stacks: {
@@ -39,6 +46,8 @@ const { values: argValues } = parseArgs({
 
 		'fix-dates-in-time-bucket': {
 			// bucket to fix metadata on. full bucket name is ISO date string like 2015-06-01T00:00:00.000Z
+      // "2014-05" for Month bucket
+      // "2014-05-07" for Day bucket
 			type: 'string',
 			default: '',
 		},
@@ -54,6 +63,8 @@ const { values: argValues } = parseArgs({
 	},
 })
 
+setDebug(argValues.debug)
+
 if (!argValues['album-id']) throw new Error('provide an album ID')
 assert.match(argValues['album-id'], /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/, 'album-id must be a UUID')
 
@@ -65,7 +76,7 @@ if (
 }
 
 if (argValues['fix-dates-in-time-bucket']) {
-	assert.match(argValues['fix-dates-in-time-bucket'], /^\d{4}-\d{2}-\d{2}/, 'time bucket must be an ISO date string')
+	assert.match(argValues['fix-dates-in-time-bucket'], /^\d{4}-\d{2}/, 'time bucket must be an ISO date string')
 
 	if (!argValues['sidecar-folder']) throw new Error('must provide sidecar folder to fix dates')
 	await readdir(argValues['sidecar-folder']) // will throw if folder does not exist
@@ -75,9 +86,9 @@ if (argValues['fix-dates-in-time-bucket']) {
 	}
 }
 
-setDebug(argValues.debug)
-
-const MAX_WRITE_OPS: number = argValues['dry-run'] ? 0 : 50
+const MAX_WRITE_OPS: number = argValues['dry-run'] ? 0 : Number.parseInt(argValues['max-write-ops'], 10)
+debug('max write ops', MAX_WRITE_OPS)
+if (Number.isNaN(MAX_WRITE_OPS)) throw new Error('max-write-ops is Not a Number')
 
 const TARGET_BUCKET: string = argValues['fix-dates-in-time-bucket']
 const SIDECAR_FOLDER: string = argValues['sidecar-folder'] // '/tmp/imm/Photos from 2015'
@@ -85,7 +96,7 @@ const EXPECTED_YEAR: string = argValues['expected-year-for-fixed'] ?? ''
 
 init({ baseUrl: 'http://192.168.1.200:2283/api', apiKey: '21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M' })
 
-if (argValues['expected-year-for-fixed']) {
+if (argValues['fix-dates-in-time-bucket']) {
 	await fixBadBuckets({ albumId: argValues['album-id'], MAX_WRITE_OPS, TARGET_BUCKET, SIDECAR_FOLDER, EXPECTED_YEAR })
 }
 
