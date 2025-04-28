@@ -12,7 +12,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@immich/sdk": "^1.131.3",
+    "@immich/sdk": "^1.132.1",
     "luxon": "^3.6.1"
   }
 }

@@ -14,6 +14,28 @@ declare module 'luxon' {
 }
 Settings.throwOnInvalid = true
 Settings.defaultZone = 'UTC'
+import { parseArgs } from 'node:util'
+// import assert from 'node:assert/strict'
+
+const { values: argValues } = parseArgs({
+	args: Bun.argv.slice(2),
+	options: {
+		stacks: {
+			type: 'boolean',
+		},
+		'fix-date-for-bucket': {
+			type: 'string',
+		},
+		'album-id': {
+			type: 'string',
+			short: 'A',
+		},
+	},
+})
+if ((argValues.stacks && argValues['fix-date-for-bucket']) || (!argValues.stacks && !argValues['fix-date-for-bucket']))
+	throw new Error('choose either to create stacks or to fix dates')
+if (!argValues['album-id']) throw new Error('provide an album ID')
+if (argValues['fix-date-for-bucket'] === '') throw new Error('invalid bucket name')
 
 init({ baseUrl: 'http://192.168.1.200:2283/api', apiKey: '21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M' })
 
@@ -24,7 +46,7 @@ const DEBUG_LOG: boolean = false
 
 const MAX_STACKS_TO_CREATE: number = 0 // 0 is equiv to dry-run
 
-const MAX_DATE_FIXED: number = 900 // 0 is equiv to dry-run
+const MAX_DATE_FIXED: number = 0 // 0 is equiv to dry-run
 const TARGET_BUCKET: string = '2025-03-01' // bucket to fix metadata on. full bucket name is ISO date string like 2015-06-01T00:00:00.000Z
 const GPHOTOS_FOLDER = '/tmp/imm/Photos from 2015' // only json sidecars are needed
 const TARGET_YEAR: string = '2015' // sanity check. Expected year for fixed date
@@ -44,8 +66,8 @@ const dir = (unk: unknown) => {
 }
 
 async function main() {
-	// await fixBadBuckets(TARGET_ALBUM_ID)
-	await createEditedStacks(TARGET_ALBUM_ID)
+	await fixBadBuckets(TARGET_ALBUM_ID)
+	// await createEditedStacks(TARGET_ALBUM_ID)
 }
 
 async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
