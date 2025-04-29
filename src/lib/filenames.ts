@@ -1,5 +1,8 @@
+import { DateTime } from 'luxon'
+import { debug } from './log.ts'
+
 export function getSidecarFilenames(filename: string): string[] {
-	const exts = /\.(jpg|jpeg|png|gif|mp4|m4v)$/i
+	const exts = /\.(jpg|jpeg|png|gif|mp4|m4v|mov)$/i
 	const match = exts.exec(filename)
 	if (!match) throw new Error(`unknown extension in filename ${filename}`)
 	const fileExt = match[0]
@@ -28,4 +31,16 @@ export function getSidecarFilenames(filename: string): string[] {
 		)
 
 	return sidecars
+}
+
+export function dateFromFilename(filename: string): DateTime {
+	const whatsapp = /^IMG-(\d{4}\d{2}\d{2})-WA\d{4}\.[a-zA-Z0-9]{3,4}$/i
+	const matches = filename.match(whatsapp)
+	debug('whatsapp filename regex match:', matches)
+	if (!matches || !matches[1]) throw new Error(`${filename} not able to be matched in dateFromFilename`)
+
+	const dt = DateTime.fromISO(matches[1], { zone: 'UTC' }).set({ hour: 12 })
+	debug('filename parsed into DateTime:', dt)
+	if (!dt.isValid) throw new Error(`failed to parse date from: ${matches[1]}`)
+	return dt
 }

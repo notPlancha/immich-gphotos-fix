@@ -1,17 +1,23 @@
 import { describe, expect as e, test as t } from 'bun:test'
-import { getSidecarFilenames as f } from './filenames.ts'
+import { dateFromFilename, getSidecarFilenames } from './filenames.ts'
+import { debug, setDebug } from './log.ts'
+import { DateTime } from 'luxon'
+
+// setDebug(true)
 
 // flags: edited, dupe(1), longName, extensions
+describe('getSidecarFilenames', () => {
+	const f = getSidecarFilenames
 
-function two(asset: string, sidecar: string) {
-	e(f(asset)).toContain(sidecar)
-}
-function three(asset: string, editedAsset: string, sidecar: string) {
-	two(asset, sidecar)
-	two(editedAsset, sidecar)
-}
+	function two(asset: string, sidecar: string) {
+		e(f(asset)).toContain(sidecar)
+	}
 
-describe('getSidecar filename', () => {
+	function three(asset: string, editedAsset: string, sidecar: string) {
+		two(asset, sidecar)
+		two(editedAsset, sidecar)
+	}
+
 	describe('strange', () => {
 		t('jpg drop dupe verylongname + edited', () => {
 			three(
@@ -84,6 +90,12 @@ describe('getSidecar filename', () => {
 		})
 	})
 
+	describe('mov', () => {
+		t('.MOV', () => {
+			two('mom haircut.MOV', 'mom haircut.MOV.supplemental-metadata.json')
+		})
+	})
+
 	describe('m4v', () => {
 		t('.m4v', () => {
 			two('MOVIE.m4v', 'MOVIE.m4v.supplemental-metadata.json')
@@ -146,6 +158,42 @@ describe('getSidecar filename', () => {
 		t('longname', () => {
 			two('Screenshot_2014-12-18-10-50-54.png', 'Screenshot_2014-12-18-10-50-54.png.supplementa.json')
 			two('Capture+_2015-11-04-10-57-37.png', 'Capture+_2015-11-04-10-57-37.png.supplemental-.json')
+		})
+	})
+})
+
+describe('dateFromFilename', () => {
+	describe('whatsapp', () => {
+		describe('parsed to Noon UTC on the date', () => {
+			const dates = [
+				['IMG-20160425-WA0000.jpg', '2016-04-25T12:00:00Z'],
+				['IMG-20160519-WA0000.jpg', '2016-05-19T12:00:00Z'],
+				['IMG-20160731-WA0000.jpg', '2016-07-31T12:00:00Z'],
+				['IMG-20160827-WA0000.jpg', '2016-08-27T12:00:00Z'],
+				['IMG-20160907-WA0002.jpg', '2016-09-07T12:00:00Z'],
+				['IMG-20161008-WA0000.jpg', '2016-10-08T12:00:00Z'],
+				['IMG-20161008-WA0001.jpg', '2016-10-08T12:00:00Z'],
+				['IMG-20161008-WA0002.jpg', '2016-10-08T12:00:00Z'],
+				['IMG-20161019-WA0002.jpg', '2016-10-19T12:00:00Z'],
+				['IMG-20161019-WA0031.jpg', '2016-10-19T12:00:00Z'],
+				['IMG-20161216-WA0000.jpg', '2016-12-16T12:00:00Z'],
+				['IMG-20161216-WA0001.jpg', '2016-12-16T12:00:00Z'],
+				['IMG-20161216-WA0002.jpg', '2016-12-16T12:00:00Z'],
+				['IMG-20161216-WA0003.jpg', '2016-12-16T12:00:00Z'],
+				['IMG-20161216-WA0004.jpg', '2016-12-16T12:00:00Z'],
+				['IMG-20161216-WA0005.jpg', '2016-12-16T12:00:00Z'],
+			] as const
+
+			// %p == pretty-format
+			t.each(dates)('%p', (whatsappFilename, isoExpected) => {
+				const dtFilename = dateFromFilename(whatsappFilename)
+				const dtExpected = DateTime.fromISO(isoExpected, { zone: 'UTC' })
+				debug('expected:', isoExpected, '-->', dtExpected)
+
+				e(dtFilename.toISO()).toBe(dtExpected.toISO())
+				e(dtFilename.equals(dtExpected)).toBe(true)
+				e(+dtFilename).toBe(+dtExpected)
+			})
 		})
 	})
 })
