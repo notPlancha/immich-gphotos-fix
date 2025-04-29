@@ -2,6 +2,7 @@
   "name": "api-scripts",
   "private": true,
   "scripts": {
+    "start": "bun ./src/main.ts",
     "test": "bun test"
   },
   "devDependencies": {
@@ -12,7 +13,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@immich/sdk": "^1.132.1",
+    "@immich/sdk": "^1.132.3",
     "luxon": "^3.6.1"
   }
 }

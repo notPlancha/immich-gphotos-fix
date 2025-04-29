@@ -25,7 +25,7 @@ const { values: argValues } = parseArgs({
 			type: 'string',
 		},
 		'album-id': {
-      // takes precedence over album-name
+			// takes precedence over album-name
 			type: 'string',
 		},
 		verbose: {
@@ -129,7 +129,7 @@ if (!albumId) {
 	if (!matchedAlbums.length || !matchedAlbums[0]) throw new Error(`album ${albumName} not found`)
 	if (matchedAlbums.length > 1) throw new Error(`multiple albums found with name ${albumName}`)
 	albumId = matchedAlbums[0].id
-  log('album', albumName, '--> id', albumId)
+	log('album', albumName, '--> id', albumId)
 }
 
 if (argValues['dates-from-sidecar']) {
@@ -140,6 +140,7 @@ if (argValues['dates-from-sidecar']) {
 		SIDECAR_FOLDER: argValues['sidecar-folder'],
 		EXPECTED_YEAR: argValues['expected-year-for-fixed'],
 		useCreationTime: argValues['use-creation-time'],
+		tag: argValues.tag,
 	})
 }
 
@@ -154,5 +155,9 @@ if (argValues['dates-from-filename']) {
 }
 
 if (argValues.stacks) {
-	await createEditedStacks({ albumId, MAX_WRITE_OPS })
+	await createEditedStacks({
+		albumId,
+		MAX_WRITE_OPS,
+		tag: argValues.tag,
+	})
 }

@@ -1,35 +1,24 @@
-import {
-	getTimeBuckets,
-	AssetOrder,
-	TimeBucketSize,
-	getTimeBucket,
-	updateAsset,
-	tagAssets,
-	type AssetResponseDto,
-	getAllTags,
-	upsertTags,
-} from '@immich/sdk'
+import { getTimeBuckets, AssetOrder, TimeBucketSize, getTimeBucket, updateAsset } from '@immich/sdk'
 import { log, debug, dir } from '../lib/log.ts'
 import type { SupplementalMetadata } from '../lib/types.ts'
 import { dateFromFilename, getSidecarFilenames } from '../lib/filenames.ts'
 import { DateTime } from 'luxon' // immich uses luxon internally, so we should also use it
 import { join } from 'node:path'
 import { exit } from 'node:process'
-import { tagMap } from '../lib/tags.ts'
+import { tagAs } from '../lib/tags.ts'
 
 type FixDatesParams = {
 	albumId: string
 	MAX_WRITE_OPS: number
 	TARGET_BUCKET: string
 	EXPECTED_YEAR?: string
+	tag?: string
 }
 type FixDatesSidecarParams = FixDatesParams & {
 	SIDECAR_FOLDER: string
 	useCreationTime: boolean
 }
-type FixDatesFilenameParams = FixDatesParams & {
-	tag?: string
-}
+type FixDatesFilenameParams = FixDatesParams & {}
 
 async function findSidecar(filename: string, SIDECAR_FOLDER: string) {
 	const candidates = getSidecarFilenames(filename).map((path) => join(SIDECAR_FOLDER, path))
@@ -124,42 +113,44 @@ async function getBucket(albumId: string, TARGET_BUCKET: string) {
 }
 
 export async function fixDatesFromSidecar(params: FixDatesSidecarParams) {
-	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, SIDECAR_FOLDER, EXPECTED_YEAR, useCreationTime } = params
+	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, SIDECAR_FOLDER, EXPECTED_YEAR, useCreationTime, tag } = params
 
 	const bucket = await getBucket(albumId, TARGET_BUCKET)
 
-	for (let i = 0; i < MAX_WRITE_OPS && i < bucket.length; i++) {
-		debug('index', i)
-		const asset = bucket[i]
-		if (!asset) throw new Error(`no asset at index ${i}`)
+	const changed = new Set<string>()
+	try {
+		for (let i = 0; i < MAX_WRITE_OPS && i < bucket.length; i++) {
+			debug('index', i)
+			const asset = bucket[i]
+			if (!asset) throw new Error(`no asset at index ${i}`)
 
-		log('checking', asset.originalFileName, 'id', asset.id)
+			log('checking', asset.originalFileName, 'id', asset.id)
 
-		const unixTimestamp = await getTimeFromSidecar(asset.originalFileName, SIDECAR_FOLDER, useCreationTime)
-		log('unix timestamp from sidecar:', unixTimestamp)
+			const unixTimestamp = await getTimeFromSidecar(asset.originalFileName, SIDECAR_FOLDER, useCreationTime)
+			log('unix timestamp from sidecar:', unixTimestamp)
 
-		if (!asset.exifInfo?.dateTimeOriginal) throw new Error('expected asset to have exifInfo')
-		const originalDT = DateTime.fromISO(asset.exifInfo?.dateTimeOriginal)
-		const sidecarDT = unixTimeToLuxon(unixTimestamp, EXPECTED_YEAR)
-		const diff = originalDT.diff(sidecarDT, 'minutes').toObject()
-		debug('time diff', diff)
-		if (typeof diff.minutes !== 'number') throw new Error('luxon diff failed')
-		if (Math.abs(diff.minutes) <= 3) {
-			log('sidecar timestamp is within 3m of the current one. Not changing.')
-		} else {
-			log('changing', originalDT.toISO(), 'to', sidecarDT.toISO())
-			await addTimeToAsset(sidecarDT, asset.id)
+			if (!asset.exifInfo?.dateTimeOriginal) throw new Error('expected asset to have exifInfo')
+			const originalDT = DateTime.fromISO(asset.exifInfo?.dateTimeOriginal)
+			const sidecarDT = unixTimeToLuxon(unixTimestamp, EXPECTED_YEAR)
+			const diff = originalDT.diff(sidecarDT, 'minutes').toObject()
+			debug('time diff', diff)
+			if (typeof diff.minutes !== 'number') throw new Error('luxon diff failed')
+			if (Math.abs(diff.minutes) <= 3) {
+				log('sidecar timestamp is within 3m of the current one. Not changing.')
+			} else {
+				log('changing', originalDT.toISO(), 'to', sidecarDT.toISO())
+				await addTimeToAsset(sidecarDT, asset.id)
+				changed.add(asset.id)
+			}
+			log('')
 		}
-		log('')
+	} catch (e: unknown) {
+		console.error(e)
 	}
-}
 
-async function tagAs(assets: string[], tagName: string) {
-	if (!assets.length) return
-
-
-	log('tagging', assets.length, 'assets with', tagName)
-	await tagAssets({ id: targetTagId, bulkIdsDto: { ids: assets } })
+	if (changed.size && tag) {
+		await tagAs(changed, tag)
+	}
 }
 
 export async function fixDatesFromFilename(params: FixDatesFilenameParams) {

@@ -1,9 +1,11 @@
 import { log, debug } from '../lib/log.ts'
 import { getTimeBuckets, AssetOrder, TimeBucketSize, getTimeBucket, createStack } from '@immich/sdk'
+import { tagAs } from '../lib/tags.ts'
 
 type CreateStacksParams = {
 	albumId: string
 	MAX_WRITE_OPS: number
+	tag?: string
 }
 
 async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
@@ -38,7 +40,7 @@ async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 }
 
 export async function createEditedStacks(params: CreateStacksParams) {
-	const { albumId, MAX_WRITE_OPS } = params
+	const { albumId, MAX_WRITE_OPS, tag } = params
 
 	const assets = await getAllAssetsInAlbum(albumId, true)
 
@@ -59,35 +61,45 @@ export async function createEditedStacks(params: CreateStacksParams) {
 	let notFound = 0
 	let alreadyStacked = 0
 	let created = 0
-	for (const asset of assets) {
-		if (asset.originalFileName.includes('-edited')) {
-			debug('\nfound:', asset.originalFileName)
-			found++
+	const changed = [] as string[]
+	try {
+		for (const asset of assets) {
+			if (asset.originalFileName.includes('-edited')) {
+				debug('\nfound:', asset.originalFileName)
+				found++
 
-			if (asset.stack) {
-				debug('already in stack')
-				alreadyStacked++
-				continue
-			}
+				if (asset.stack) {
+					debug('already in stack')
+					alreadyStacked++
+					continue
+				}
 
-			const uneditedName = asset.originalFileName.replace('-edited', '')
-			const uneditedAsset = nameMap.get(uneditedName)
-			if (!uneditedAsset) {
-				if (dupes.includes(uneditedName)) console.error(uneditedName, 'was found twice, skipping')
-				else console.error('couldnt find unedited asset', uneditedName, '. Maybe it got trashed')
-				notFound++
-				continue
-			}
-			debug('unedited:', uneditedAsset.originalFileName)
+				const uneditedName = asset.originalFileName.replace('-edited', '')
+				const uneditedAsset = nameMap.get(uneditedName)
+				if (!uneditedAsset) {
+					if (dupes.includes(uneditedName)) console.error(uneditedName, 'was found twice, skipping')
+					else console.error('couldnt find unedited asset', uneditedName, '. Maybe it got trashed')
+					notFound++
+					continue
+				}
+				debug('unedited:', uneditedAsset.originalFileName)
 
-			if (created < MAX_WRITE_OPS) {
-				const s = await createStack({ stackCreateDto: { assetIds: [asset.id, uneditedAsset.id] } })
-				created++
-				log('created stack with primaryAssetId:', s.primaryAssetId)
+				if (created < MAX_WRITE_OPS) {
+					const s = await createStack({ stackCreateDto: { assetIds: [asset.id, uneditedAsset.id] } })
+					created++
+					log('created stack with primaryAssetId:', s.primaryAssetId)
+					changed.push(asset.id, uneditedAsset.id)
+				}
 			}
 		}
+	} catch (e) {
+		console.error(e)
 	}
 	log('found', found, 'edited assets')
 	log(alreadyStacked, 'already in a stack')
 	log(notFound, 'without an unedited version')
+  
+	if (changed.length && tag) {
+		await tagAs(changed, tag)
+	}
 }
