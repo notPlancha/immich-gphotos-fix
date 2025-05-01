@@ -157,10 +157,10 @@ export async function fixDatesFromFilename(params: FixDatesFilenameParams) {
 	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, EXPECTED_YEAR, tag } = params
 	const bucket = await getBucket(albumId, TARGET_BUCKET)
 
-	const changed = [] as string[]
+	const changed = new Set<string>()
 	try {
 		for (const asset of bucket) {
-			if (changed.length >= MAX_WRITE_OPS) break
+			if (changed.size >= MAX_WRITE_OPS) break
 
 			const { originalFileName } = asset
 			log('for asset', originalFileName)
@@ -184,7 +184,7 @@ export async function fixDatesFromFilename(params: FixDatesFilenameParams) {
 
 			log('changing', oldDate.toISO(), 'to', newDate.toISO())
 			await addTimeToAsset(newDate, asset.id)
-			changed.push(asset.id)
+			changed.add(asset.id)
 
 			log('')
 		}
@@ -192,7 +192,7 @@ export async function fixDatesFromFilename(params: FixDatesFilenameParams) {
 		console.error(e)
 	}
 
-	if (changed.length && tag) {
+	if (changed.size && tag) {
 		await tagAs(changed, tag)
 	}
 }

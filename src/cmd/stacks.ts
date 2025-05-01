@@ -61,7 +61,7 @@ export async function createEditedStacks(params: CreateStacksParams) {
 	let notFound = 0
 	let alreadyStacked = 0
 	let created = 0
-	const changed = [] as string[]
+	const changed = new Set<string>()
 	try {
 		for (const asset of assets) {
 			if (asset.originalFileName.includes('-edited')) {
@@ -88,7 +88,8 @@ export async function createEditedStacks(params: CreateStacksParams) {
 					const s = await createStack({ stackCreateDto: { assetIds: [asset.id, uneditedAsset.id] } })
 					created++
 					log('created stack with primaryAssetId:', s.primaryAssetId)
-					changed.push(asset.id, uneditedAsset.id)
+					changed.add(asset.id)
+					changed.add(uneditedAsset.id)
 				}
 			}
 		}
@@ -98,8 +99,8 @@ export async function createEditedStacks(params: CreateStacksParams) {
 	log('found', found, 'edited assets')
 	log(alreadyStacked, 'already in a stack')
 	log(notFound, 'without an unedited version')
-  
-	if (changed.length && tag) {
+
+	if (changed.size && tag) {
 		await tagAs(changed, tag)
 	}
 }

@@ -24,12 +24,17 @@ async function getOrCreateTag(tagName: string) {
 	return targetTagId
 }
 
-export async function tagAs(assets: string[], tagName: string) {
-	if (!assets.length) return
+export async function tagAs(assets: Set<string>, tagName: string) {
+	if (!assets.size) return
 
 	const targetTagId = await getOrCreateTag(tagName)
 	log('got tag', tagName, 'with id', targetTagId)
 
-	log('tagging', assets.length, 'assets with', tagName)
-	await tagAssets({ id: targetTagId, bulkIdsDto: { ids: assets } })
+	log('tagging', assets.size, 'assets with', tagName)
+	const tagResponses = await tagAssets({ id: targetTagId, bulkIdsDto: { ids: Array.from(assets) } })
+	for (const tagResponse of tagResponses) {
+		const { id, success, error } = tagResponse
+		log(`tagged ${id} - success: ${success}`)
+		if (error) console.error(error)
+	}
 }

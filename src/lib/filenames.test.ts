@@ -32,6 +32,14 @@ describe('getSidecarFilenames', () => {
 		t('jpg keep dupe in same position longname', () => {
 			two('hangout_snapshot_0(3).jpg', 'hangout_snapshot_0(3).jpg.supplemental-metadat.json')
 		})
+		t('special chars verylongname', () => {
+			// drops a char
+			// seems to conflict with "jpg drop dupe verylongname + edited"
+			two(
+				'index.html_url=https_2F_2Fcalifornia-times-bri.jpg', // 50 chars
+				'index.html_url=https_2F_2Fcalifornia-times-br.json', // 50 chars
+			)
+		})
 	})
 
 	describe('jpg', () => {

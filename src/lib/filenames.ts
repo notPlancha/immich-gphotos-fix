@@ -24,11 +24,14 @@ export function getSidecarFilenames(filename: string): string[] {
 	const baseSidecar = `${uneditedFilename}${fileExt}.supplemental-metadata`.slice(0, maxFilenameLength)
 
 	const sidecars = [`${baseSidecar}${dupe}.json`]
-	if (dupe)
+	if (dupe) {
 		sidecars.push(
 			`${`${uneditedFilename}${dupe}${fileExt}.supplemental-metadata`.slice(0, maxFilenameLength)}.json`, // strange, keep dupe before filename sometimes
 			`${baseSidecar}.json`, // strange, just drop dupe sometimes if verylongname
 		)
+	} else if (filename.length === 50) {
+		sidecars.push(`${`${uneditedFilename}${fileExt}.supplemental-metadata`.slice(0, maxFilenameLength - 1)}.json`)
+	}
 
 	return sidecars
 }
