@@ -1,4 +1,4 @@
-import { getAllAlbums, init } from '@immich/sdk'
+import { getAllAlbums, init, pingServer, validateAccessToken } from '@immich/sdk'
 import { parseArgs } from 'node:util'
 import assert from 'node:assert/strict'
 import { readdir } from 'node:fs/promises'
@@ -7,6 +7,7 @@ import { fixDatesFromFilename, fixDatesFromSidecar } from './cmd/dates.ts'
 import { Settings /*, type TSSettings */ } from 'luxon' // immich uses luxon internally, so we should also use it
 import { debug, log, setDebug } from './lib/log.ts'
 import { exit } from 'node:process'
+import { parseArgsWithHelp } from 'minus-h'
 declare module 'luxon' {
 	interface TSSettings {
 		throwOnInvalid: true
@@ -18,74 +19,105 @@ declare module 'luxon' {
 Settings.throwOnInvalid = true
 Settings.defaultZone = 'UTC'
 
-const { values: argValues } = parseArgs({
-	args: Bun.argv.slice(2), // [0] is bun executable, [1] is this file
-	options: {
-		'album-name': {
-			type: 'string',
-		},
-		'album-id': {
-			// takes precedence over album-name
-			type: 'string',
-		},
-		verbose: {
-			type: 'boolean',
-			default: false,
-			short: 'v',
-		},
-		'dry-run': {
-			type: 'boolean',
-			short: 'n',
-		},
-		'max-write-ops': {
-			type: 'string',
-			default: Number.MAX_SAFE_INTEGER.toString(),
-			short: 'm',
-		},
-		tag: {
-			type: 'string',
-		},
+const { values: argValues } = parseArgsWithHelp(
+	{
+		allowPositionals: true,
+		argumentName: 'stacks | dates-from-sidecar | dates-from-filename',
+		argumentDescription:
+			'stacks: create stacks with all -edited and unedited photos, placing edited version on top of the stack. dates-from-sidecar: Pull dates from google photos supplemental-metadata.json, and apply the photoTakenTime to the immich asset.',
+		options: {
+			'api-url': {
+				type: 'string',
+				short: 'u',
+				default: process.env.IMMICH_INSTANCE_URL,
+				argumentName: 'url',
+				description:
+					'Immich instance API URL, like: http://192.168.1.10:2283/api. (Also settable via env IMMICH_INSTANCE_URL)',
+			},
+			'api-key': {
+				type: 'string',
+				short: 'k',
+				default: process.env.IMMICH_API_KEY,
+				argumentName: 'key',
+				description: 'API key (can also be set via env IMMICH_INSTANCE_URL)',
+			},
 
-		stacks: {
-			type: 'boolean',
-			default: false,
-		},
+			'album-name': {
+				type: 'string',
+				short: 'A',
+				argumentName: 'name',
+				description: 'Album to pull assets from. Must provide either album-name or album-id.',
+			},
+			'album-id': {
+				type: 'string',
+				argumentName: 'id',
+				description: 'takes precedence over album-name',
+			},
+			verbose: {
+				type: 'boolean',
+				default: false,
+				short: 'v',
+			},
+			'dry-run': {
+				type: 'boolean',
+				short: 'n',
+			},
+			'max-write-ops': {
+				type: 'string',
+				default: Number.MAX_SAFE_INTEGER.toString(),
+				short: 'm',
+			},
+			tag: {
+				type: 'string',
+				argumentName: 'name',
+			},
 
-		'dates-from-sidecar': {
-			type: 'boolean',
-			default: false,
-		},
-		'dates-from-filename': {
-			type: 'boolean',
-			default: false,
-		},
-		'in-time-bucket': {
-			// bucket to fix metadata on. full bucket name is ISO date string like 2015-06-01T00:00:00.000Z
-			// "2014-05" for Month bucket
-			// "2014-05-07" for Day bucket
-			type: 'string',
-			default: '',
-		},
-		'expected-year-for-fixed': {
-			// sanity check. Expected year for fixed date
-			type: 'string',
-			short: 'e',
-		},
-		'sidecar-folder': {
-			// '/tmp/imm/Photos from 2015'
-			// only json sidecar files are needed
-			type: 'string',
-			default: '',
-		},
-		'use-creation-time': {
-			// in sidecar JSON, true to use creationTime , false to use photoTakenTime
-			type: 'boolean',
-			default: false,
+			stacks: {
+				type: 'boolean',
+				default: false,
+			},
+
+			'dates-from-sidecar': {
+				type: 'boolean',
+				default: false,
+			},
+			'dates-from-filename': {
+				type: 'boolean',
+				default: false,
+			},
+			'in-time-bucket': {
+				// bucket to fix metadata on. full bucket name is ISO date string like 2015-06-01T00:00:00.000Z
+				// "2014-05" for Month bucket
+				// "2014-05-07" for Day bucket
+				type: 'string',
+				default: '',
+			},
+			'expected-year-for-fixed': {
+				type: 'string',
+				short: 'e',
+				argumentName: 'year',
+				description: 'Expected year for fixed date. Sanity check',
+			},
+			'sidecar-folder': {
+				// '/tmp/imm/Photos from 2015'
+				// only json sidecar files are needed
+				type: 'string',
+				default: '',
+			},
+			'use-creation-time': {
+				// in sidecar JSON, true to use creationTime , false to use photoTakenTime
+				type: 'boolean',
+				default: false,
+			},
 		},
 	},
-})
+	{ newlineReplacement: '\n' },
+)
 
 setDebug(argValues.verbose)
+
+if (!argValues['api-url']) throw new Error('must provide an API URL')
+if (!argValues['api-key']) throw new Error('must provide an API key')
 
 if (!argValues['album-id'] && !argValues['album-name']) throw new Error('provide an album name or ID')
 if (argValues['album-id'])
@@ -119,7 +151,17 @@ const MAX_WRITE_OPS: number = argValues['dry-run'] ? 0 : Number.parseInt(argValu
 debug('max write ops', MAX_WRITE_OPS)
 if (Number.isNaN(MAX_WRITE_OPS)) throw new Error('max-write-ops is Not a Number')
 
-init({ baseUrl: 'http://192.168.1.200:2283/api', apiKey: '21TDFYiI1CtfeuxxlLNGHHCDVpg97ZwwrjWmAnG48M' })
+init({ baseUrl: argValues['api-url'], apiKey: argValues['api-key'] })
+
+const p = await pingServer()
+if (p.res !== 'pong') throw new Error('invalid API URL')
+log('API url is valid')
+
+const v = await validateAccessToken()
+if (!v.authStatus) throw new Error('invalid API key')
+log('API key is valid')
+
+exit(0)
 
 let albumId = argValues['album-id']
 if (!albumId) {
