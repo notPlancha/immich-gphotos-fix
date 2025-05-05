@@ -1,24 +1,11 @@
 import { getTimeBuckets, AssetOrder, TimeBucketSize, getTimeBucket, updateAsset } from '@immich/sdk'
 import { log, debug, dir } from '../lib/log.ts'
-import type { SupplementalMetadata } from '../lib/types.ts'
+import type { FixDatesFilenameParams, FixDatesSidecarParams, SupplementalMetadata } from '../lib/types.ts'
 import { dateFromFilename, getSidecarFilenames } from '../lib/filenames.ts'
 import { DateTime } from 'luxon' // immich uses luxon internally, so we should also use it
 import { join } from 'node:path'
 import { exit } from 'node:process'
 import { tagAs } from '../lib/tags.ts'
-
-type FixDatesParams = {
-	albumId: string
-	MAX_WRITE_OPS: number
-	TARGET_BUCKET: string
-	EXPECTED_YEAR?: string
-	tag?: string
-}
-type FixDatesSidecarParams = FixDatesParams & {
-	SIDECAR_FOLDER: string
-	useCreationTime: boolean
-}
-type FixDatesFilenameParams = FixDatesParams & {}
 
 async function findSidecar(filename: string, SIDECAR_FOLDER: string) {
 	const candidates = getSidecarFilenames(filename).map((path) => join(SIDECAR_FOLDER, path))
@@ -113,7 +100,15 @@ async function getBucket(albumId: string, TARGET_BUCKET: string) {
 }
 
 export async function fixDatesFromSidecar(params: FixDatesSidecarParams) {
-	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, SIDECAR_FOLDER, EXPECTED_YEAR, useCreationTime, tag } = params
+	const {
+		albumId,
+		MAX_WRITE_OPS = Number.MAX_SAFE_INTEGER,
+		TARGET_BUCKET,
+		SIDECAR_FOLDER,
+		EXPECTED_YEAR,
+		useCreationTime,
+		tag,
+	} = params
 
 	const bucket = await getBucket(albumId, TARGET_BUCKET)
 
@@ -154,7 +149,7 @@ export async function fixDatesFromSidecar(params: FixDatesSidecarParams) {
 }
 
 export async function fixDatesFromFilename(params: FixDatesFilenameParams) {
-	const { albumId, MAX_WRITE_OPS, TARGET_BUCKET, EXPECTED_YEAR, tag } = params
+	const { albumId, MAX_WRITE_OPS = Number.MAX_SAFE_INTEGER, TARGET_BUCKET, EXPECTED_YEAR, tag } = params
 	const bucket = await getBucket(albumId, TARGET_BUCKET)
 
 	const changed = new Set<string>()

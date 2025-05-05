@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@immich/sdk": "^1.132.3",
-    "luxon": "^3.6.1",
-    "minus-h": "^2.1.0"
+    "luxon": "^3.6.1"
   }
 }

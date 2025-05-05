@@ -1,12 +1,7 @@
 import { log, debug } from '../lib/log.ts'
 import { getTimeBuckets, AssetOrder, TimeBucketSize, getTimeBucket, createStack } from '@immich/sdk'
 import { tagAs } from '../lib/tags.ts'
-
-type CreateStacksParams = {
-	albumId: string
-	MAX_WRITE_OPS: number
-	tag?: string
-}
+import type { CreateStacksParams } from '../lib/types.ts'
 
 async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 	const buckets = await getTimeBuckets({
@@ -40,7 +35,7 @@ async function getAllAssetsInAlbum(albumId: string, withStacked?: boolean) {
 }
 
 export async function createEditedStacks(params: CreateStacksParams) {
-	const { albumId, MAX_WRITE_OPS, tag } = params
+	const { albumId, MAX_WRITE_OPS = Number.MAX_SAFE_INTEGER, tag } = params
 
 	const assets = await getAllAssetsInAlbum(albumId, true)
 
