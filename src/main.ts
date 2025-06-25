@@ -31,7 +31,7 @@ Commands (choose one):
 Required global options:
   -u,--api-url <url>                   Immich instance API URL, like: http://192.168.1.10:2283/api.
                                        (Also settable via env IMMICH_INSTANCE_URL)
-  -k,--api-key <key>                   API key (can also be set via env IMMICH_INSTANCE_URL)
+  -k,--api-key <key>                   API key (can also be set via env IMMICH_API_KEY)
   -A,--album-name <name>               Album to pull assets from. Must provide either album-name or album-id.
   --album-id <id>                      Takes precedence over album-name. UUID.
 
