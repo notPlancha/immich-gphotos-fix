@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "start": "bun ./src/main.ts",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun build src/main.ts --outdir=bin --target=node"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -15,5 +16,8 @@
   "dependencies": {
     "@immich/sdk": "^1.132.3",
     "luxon": "^3.6.1"
+  },
+  "bin": {
+    "api-scripts": "./bin/main.js"
   }
 }
